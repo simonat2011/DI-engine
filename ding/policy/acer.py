@@ -1,17 +1,17 @@
 from collections import namedtuple
 from typing import List, Dict, Any, Tuple
 import copy
-
+import math
 import torch
 
 from ding.model import model_wrap
 from ding.rl_utils import get_train_sample, compute_q_retraces, acer_policy_error,\
-     acer_value_error, acer_trust_region_update
+    acer_value_error, acer_trust_region_update
 from ding.torch_utils import Adam, RMSprop, to_device
 from ding.utils import POLICY_REGISTRY
 from ding.utils.data import default_collate, default_decollate
 from ding.policy.base_policy import Policy
-
+from ding.utils import list_split, lists_to_dicts
 EPS = 1e-8
 
 
@@ -151,6 +151,8 @@ class ACERPolicy(Policy):
             state_dict = torch.load(self._cfg.learn.load_path)
             self._load_state_dict_learn(state_dict)
 
+        self.res = []
+
     def _data_preprocess_learn(self, data: List[Dict[str, Any]]):
         """
         Overview:
@@ -180,13 +182,17 @@ class ACERPolicy(Policy):
             data = to_device(data, self._device)
         data['weight'] = data.get('weight', None)
         # shape (T+1)*B,env_obs_shape
-        data['obs_plus_1'] = torch.cat((data['obs'] + data['next_obs'][-1:]), dim=0)
+        data['obs_plus_1'] = torch.cat(
+            (data['obs'] + data['next_obs'][-1:]), dim=0)
         data['logit'] = torch.cat(
             data['logit'], dim=0
         ).reshape(self._unroll_len, -1, self._action_shape)  # shape T,B,env_action_shape
-        data['action'] = torch.cat(data['action'], dim=0).reshape(self._unroll_len, -1)  # shape T,B,
-        data['done'] = torch.cat(data['done'], dim=0).reshape(self._unroll_len, -1).float()  # shape T,B,
-        data['reward'] = torch.cat(data['reward'], dim=0).reshape(self._unroll_len, -1)  # shape T,B,
+        data['action'] = torch.cat(data['action'], dim=0).reshape(
+            self._unroll_len, -1)  # shape T,B,
+        data['done'] = torch.cat(data['done'], dim=0).reshape(
+            self._unroll_len, -1).float()  # shape T,B,
+        data['reward'] = torch.cat(data['reward'], dim=0).reshape(
+            self._unroll_len, -1)  # shape T,B,
         data['weight'] = torch.cat(
             data['weight'], dim=0
         ).reshape(self._unroll_len, -1) if data['weight'] else None  # shape T,B
@@ -212,9 +218,12 @@ class ACERPolicy(Policy):
         """
         data = self._data_preprocess_learn(data)
         self._learn_model.train()
-        action_data = self._learn_model.forward(data['obs_plus_1'], mode='compute_actor')
-        q_value_data = self._learn_model.forward(data['obs_plus_1'], mode='compute_critic')
-        avg_action_data = self._target_model.forward(data['obs_plus_1'], mode='compute_actor')
+        action_data = self._learn_model.forward(
+            data['obs_plus_1'], mode='compute_actor')
+        q_value_data = self._learn_model.forward(
+            data['obs_plus_1'], mode='compute_critic')
+        avg_action_data = self._target_model.forward(
+            data['obs_plus_1'], mode='compute_actor')
 
         target_logit, behaviour_logit, avg_logit, actions, q_values, rewards, weights = self._reshape_data(
             action_data, avg_action_data, q_value_data, data
@@ -231,39 +240,40 @@ class ACERPolicy(Policy):
             # shape (T+1),B,1
             v_pred = (q_values * target_pi).sum(-1).unsqueeze(-1)
             # Calculate retrace
-            q_retraces = compute_q_retraces(q_values, v_pred, rewards, actions, weights, ratio, self._gamma)
+            q_retraces = compute_q_retraces(
+                q_values, v_pred, rewards, actions, weights, ratio, self._gamma)
 
-        weights_ext = torch.ones_like(weights)
-        weights_ext[1:] = weights[0:-1]
-        weights = weights_ext
+        
         q_retraces = q_retraces[0:-1]  # shape T,B,1
         q_values = q_values[0:-1]  # shape T,B,env_action_shape
         v_pred = v_pred[0:-1]  # shape T,B,1
         target_pi = target_pi[0:-1]  # shape T,B,env_action_shape
         avg_pi = avg_pi[0:-1]  # shape T,B,env_action_shape
-        total_valid = weights.sum()  # 1
         # ====================
         # policy update
         # ====================
         actor_loss, bc_loss = acer_policy_error(
             q_values, q_retraces, v_pred, target_pi, actions, ratio, self._c_clip_ratio
         )
-        actor_loss = actor_loss * weights.unsqueeze(-1)
-        bc_loss = bc_loss * weights.unsqueeze(-1)
+        actor_loss = actor_loss
+        bc_loss = bc_loss
         dist_new = torch.distributions.categorical.Categorical(probs=target_pi)
-        entropy_loss = (dist_new.entropy() * weights).unsqueeze(-1)  # shape T,B,1
-        total_actor_loss = (actor_loss + bc_loss + self._entropy_weight * entropy_loss).sum() / total_valid
+        entropy_loss = dist_new.entropy().unsqueeze(-1)  # shape T,B,1
+        total_actor_loss = (
+            actor_loss + bc_loss + self._entropy_weight * entropy_loss).mean()
         self._optimizer_actor.zero_grad()
-        actor_gradients = torch.autograd.grad(-total_actor_loss, target_pi, retain_graph=True)
+        actor_gradients = torch.autograd.grad(
+            -total_actor_loss, target_pi, retain_graph=True)
         if self._use_trust_region:
-            actor_gradients = acer_trust_region_update(actor_gradients, target_pi, avg_pi, self._trust_region_value)
+            actor_gradients = acer_trust_region_update(
+                actor_gradients, target_pi, avg_pi, self._trust_region_value)
         target_pi.backward(actor_gradients)
         self._optimizer_actor.step()
 
         # ====================
         # critic update
         # ====================
-        critic_loss = (acer_value_error(q_values, q_retraces, actions) * weights.unsqueeze(-1)).sum() / total_valid
+        critic_loss = acer_value_error(q_values, q_retraces, actions).mean()
         self._optimizer_critic.zero_grad()
         critic_loss.backward()
         self._optimizer_critic.step()
@@ -271,17 +281,17 @@ class ACERPolicy(Policy):
 
         with torch.no_grad():
             kl_div = avg_pi * ((avg_pi + EPS).log() - (target_pi + EPS).log())
-            kl_div = (kl_div.sum(-1) * weights).sum() / total_valid
+            kl_div = kl_div.mean()
 
         return {
             'cur_actor_lr': self._optimizer_actor.defaults['lr'],
             'cur_critic_lr': self._optimizer_critic.defaults['lr'],
-            'actor_loss': (actor_loss.sum() / total_valid).item(),
-            'bc_loss': (bc_loss.sum() / total_valid).item(),
+            'actor_loss': actor_loss.mean().item(),
+            'bc_loss': bc_loss.mean().item(),
             'policy_loss': total_actor_loss.item(),
             'critic_loss': critic_loss.item(),
-            'entropy_loss': (entropy_loss.sum() / total_valid).item(),
-            'kl_div': kl_div.item()
+            'entropy_loss': entropy_loss.mean().item(),
+            'kl_div': kl_div.item(),
         }
 
     def _reshape_data(
@@ -368,7 +378,8 @@ class ACERPolicy(Policy):
             Use multinomial_sample to choose action.
         """
         self._collect_unroll_len = self._cfg.collect.unroll_len
-        self._collect_model = model_wrap(self._model, wrapper_name='multinomial_sample')
+        self._collect_model = model_wrap(
+            self._model, wrapper_name='multinomial_sample')
         self._collect_model.reset()
 
     def _forward_collect(self, data: Dict[int, Any]) -> Dict[int, Dict[str, Any]]:
@@ -412,7 +423,17 @@ class ACERPolicy(Policy):
             And the user can customize the this data processing procedure by overriding this two methods and collector \
             itself.
         """
-        return get_train_sample(data, self._unroll_len)
+        data = self.res+data
+        len1 = len(data)
+        part = math.ceil(len1/self._unroll_len)
+        tmp_buffer = []
+        for i in range(part-1):
+            tmp_buffer.append(
+                data[i*self._unroll_len:i*self._unroll_len+self._unroll_len])
+        self.res = data[(part-1)*self._unroll_len:]
+        if len(tmp_buffer) > 0:
+            tmp_buffer = [lists_to_dicts(d, recursive=True) for d in tmp_buffer]
+        return tmp_buffer
 
     def _process_transition(self, obs: Any, policy_output: Dict[str, Any], timestep: namedtuple) -> Dict[str, Any]:
         r"""
@@ -443,7 +464,8 @@ class ACERPolicy(Policy):
             Evaluate mode init method. Called by ``self.__init__``, initialize eval_model,
             and use argmax_sample to choose action.
         """
-        self._eval_model = model_wrap(self._model, wrapper_name='argmax_sample')
+        self._eval_model = model_wrap(
+            self._model, wrapper_name='argmax_sample')
         self._eval_model.reset()
 
     def _forward_eval(self, data: Dict[int, Any]) -> Dict[int, Any]:
