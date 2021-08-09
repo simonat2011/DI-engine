@@ -233,26 +233,20 @@ class ACERPolicy(Policy):
             # Calculate retrace
             q_retraces = compute_q_retraces(q_values, v_pred, rewards, actions, weights, ratio, self._gamma)
 
-        weights_ext = torch.ones_like(weights)
-        weights_ext[1:] = weights[0:-1]
-        weights = weights_ext
         q_retraces = q_retraces[0:-1]  # shape T,B,1
         q_values = q_values[0:-1]  # shape T,B,env_action_shape
         v_pred = v_pred[0:-1]  # shape T,B,1
         target_pi = target_pi[0:-1]  # shape T,B,env_action_shape
         avg_pi = avg_pi[0:-1]  # shape T,B,env_action_shape
-        total_valid = weights.sum()  # 1
         # ====================
         # policy update
         # ====================
         actor_loss, bc_loss = acer_policy_error(
             q_values, q_retraces, v_pred, target_pi, actions, ratio, self._c_clip_ratio
         )
-        actor_loss = actor_loss * weights.unsqueeze(-1)
-        bc_loss = bc_loss * weights.unsqueeze(-1)
         dist_new = torch.distributions.categorical.Categorical(probs=target_pi)
-        entropy_loss = (dist_new.entropy() * weights).unsqueeze(-1)  # shape T,B,1
-        total_actor_loss = (actor_loss + bc_loss + self._entropy_weight * entropy_loss).sum() / total_valid
+        entropy_loss = dist_new.entropy().unsqueeze(-1)  # shape T,B,1
+        total_actor_loss = (actor_loss + bc_loss + self._entropy_weight * entropy_loss).mean()
         self._optimizer_actor.zero_grad()
         actor_gradients = torch.autograd.grad(-total_actor_loss, target_pi, retain_graph=True)
         if self._use_trust_region:
@@ -263,7 +257,7 @@ class ACERPolicy(Policy):
         # ====================
         # critic update
         # ====================
-        critic_loss = (acer_value_error(q_values, q_retraces, actions) * weights.unsqueeze(-1)).sum() / total_valid
+        critic_loss = acer_value_error(q_values, q_retraces, actions).mean()
         self._optimizer_critic.zero_grad()
         critic_loss.backward()
         self._optimizer_critic.step()
@@ -271,16 +265,15 @@ class ACERPolicy(Policy):
 
         with torch.no_grad():
             kl_div = avg_pi * ((avg_pi + EPS).log() - (target_pi + EPS).log())
-            kl_div = (kl_div.sum(-1) * weights).sum() / total_valid
-
+            kl_div = kl_div.mean()
         return {
             'cur_actor_lr': self._optimizer_actor.defaults['lr'],
             'cur_critic_lr': self._optimizer_critic.defaults['lr'],
-            'actor_loss': (actor_loss.sum() / total_valid).item(),
-            'bc_loss': (bc_loss.sum() / total_valid).item(),
+            'actor_loss': actor_loss.mean().item(),
+            'bc_loss': bc_loss.mean().item(),
             'policy_loss': total_actor_loss.item(),
             'critic_loss': critic_loss.item(),
-            'entropy_loss': (entropy_loss.sum() / total_valid).item(),
+            'entropy_loss': entropy_loss.mean().item(),
             'kl_div': kl_div.item()
         }
 
@@ -412,7 +405,7 @@ class ACERPolicy(Policy):
             And the user can customize the this data processing procedure by overriding this two methods and collector \
             itself.
         """
-        return get_train_sample(data, self._unroll_len)
+        return get_train_sample(data, self._unroll_len, last_fn_type='drop')
 
     def _process_transition(self, obs: Any, policy_output: Dict[str, Any], timestep: namedtuple) -> Dict[str, Any]:
         r"""
