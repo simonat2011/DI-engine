@@ -36,6 +36,12 @@ cartpole_a2c_config = dict(
             # (float) the trade-off factor lambda to balance 1step td and mc
             gae_lambda=0.95,
         ),
+        other=dict(
+            sil=dict(
+                value_weight=0.5,
+                learning_rate = 0.001,          
+            )
+        ),
     ),
 )
 cartpole_a2c_config = EasyDict(cartpole_a2c_config)

@@ -7,7 +7,8 @@ from collections import namedtuple
 from .command_mode_policy_instance import DummyCommandModePolicy
 import torch
 from ding.torch_utils import Adam, to_device
-
+from .common_utils import default_preprocess_learn
+from ding.rl_utils.sil import sil_data, sil_error
 
 def create_sil(policy: Policy, cfg):
     sil_policy = SILCommand(policy, cfg)
@@ -36,13 +37,16 @@ class SIL(Policy):
         # Optimizer
         self._optimizer = Adam(
             self._model.parameters(),
-            lr=self._cfg.learn.learning_rate,
+            lr=self._cfg.other.sil.learning_rate,
             betas=self._cfg.learn.betas,
             eps=self._cfg.learn.eps
         )
         self._priority = self.base_policy._priority
+        self._vw = self._cfg.other.sil.value_weight
         self._learn_model = model_wrap(self._model, wrapper_name='base')
         self._learn_model.reset()
+
+    # def _data_preprocess_learn(self, data):
 
     def _forward_learn(self, data: dict) -> Dict[str, Any]:
         r"""
@@ -53,7 +57,24 @@ class SIL(Policy):
         Returns:
             - info_dict (:obj:`Dict[str, Any]`): Including current lr and loss.
         """
-        return self.base_policy._forward_learn(data)
+        info1 = self.base_policy._forward_learn(data['base_policy'])
+        data = data['sil']
+        data = default_preprocess_learn(data, ignore_done=self._cfg.learn.ignore_done, use_nstep=False)
+        output = self._learn_model.forward(data['obs'], mode='compute_actor_critic')
+        data = sil_data(output['logit'], data['action'], output['value'], data['total_reward'])
+        policy_loss, value_loss = sil_error(data)
+        total_loss = policy_loss + self._vw * value_loss
+        self._optimizer.zero_grad()
+        total_loss.backward()
+
+        self._optimizer.step()
+        info2 = {
+            'sil_total_loss': total_loss.item(),
+            'sil_policy_loss': policy_loss.item(),
+            'sil_value_loss': value_loss.item(),
+        }
+        info1.update(info2)
+        return info1
 
     def _state_dict_learn(self) -> Dict[str, Any]:
         return {
@@ -116,7 +137,6 @@ class SIL(Policy):
             d['total_reward'] = total_reward
             postprocess_data.append(d)
         postprocess_data.reverse()
-        print(postprocess_data)
         postprocess_data = self.base_policy._get_train_sample(postprocess_data)
         return postprocess_data
 
@@ -143,7 +163,7 @@ class SIL(Policy):
         return self.base_policy.default_model()
 
     def _monitor_vars_learn(self) -> List[str]:
-        return self.base_policy._monitor_vars_learn()
+        return self.base_policy._monitor_vars_learn()+['sil_total_loss', 'sil_policy_loss', 'sil_value_loss',]
 
 
 class SILCommand(SIL, DummyCommandModePolicy):
