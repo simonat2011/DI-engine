@@ -21,6 +21,7 @@
   
     
       <script type="text/javascript" id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
         <script src="../_static/jquery.js"></script>
         <script src="../_static/underscore.js"></script>
         <script src="../_static/doctools.js"></script>
@@ -32,6 +33,8 @@
   
   <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
   <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+  <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Model Overview" href="model_overview_en.html" />
@@ -81,12 +84,13 @@
               
             
             
-              <p class="caption"><span class="caption-text">User Guide</span></p>
+              <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation/index.html">Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../quick_start/index.html">Quick Start</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../key_concept/index.html">Key Concept</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../intro_rl/index.html">Introduction to RL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../env_tutorial/index.html">RL Environment Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../hands_on/index.html">Hands on RL</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../best_practice/index.html">Best Practice</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_doc/index.html">API Doc</a></li>
@@ -113,7 +117,7 @@
 </ul>
 </li>
 </ul>
-<p class="caption"><span class="caption-text">Developer Guide</span></p>
+<p class="caption" role="heading"><span class="caption-text">Developer Guide</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../guide/index.html">Developer Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../tutorial_dev/index.html">Tutorial-Developer</a></li>
@@ -244,7 +248,7 @@
 <blockquote>
 <div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">_forward_learn</span></code> : Forward method for learn mode.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">_reset_learn</span></code> : Reset learn mode related varaiables if there are any. Do not need to implement this by force.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_reset_learn</span></code> : Reset learn mode related variables if there are any. Do not need to implement this by force.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_monitor_vars_learn</span></code> : Variables that are monitored in learner training process. Those variables will be printed to text and tensorboard logger.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_state_dict_learn</span></code> : Return model’s current state dict.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_load_state_dict_learn</span></code> : Load a state dict to model.</p></li>
@@ -255,7 +259,7 @@
 <blockquote>
 <div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">_forward_collect</span></code> : Forward method for collect mode.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">_reset_collect</span></code> : Reset collect mode related varaiables if there are any. Do not need to implement this by force.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_reset_collect</span></code> : Reset collect mode related variables if there are any. Do not need to implement this by force.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_process_transition</span></code> : Process env timestep and policy output into a transition.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_get_train_sample</span></code> : Get samples that could be used for training from a sequence of transitions.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_state_dict_collect</span></code> : Return model’s current state dict.</p></li>
@@ -267,7 +271,7 @@
 <blockquote>
 <div><ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">_forward_eval</span></code> : Forward method for eval mode.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">_reset_eval</span></code> : Reset eval mode related varaiables if there are any. Do not need to implement this by force.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">_reset_eval</span></code> : Reset eval mode related variables if there are any. Do not need to implement this by force.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_state_dict_eval</span></code> : Return model’s current state dict.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">_load_state_dict_eval</span></code> : Load a state dict to model.</p></li>
 </ul>
